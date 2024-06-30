@@ -6,6 +6,10 @@ import re
 import os
 from flask import Flask
 import threading
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def search_imdb(search_query):
     url = f"https://www.imdb.com/find?q={search_query}&s=tt&ref_=fn_al_tt_mr"
@@ -36,9 +40,9 @@ def search_imdb(search_query):
                     })
         return results
     except requests.RequestException as e:
-        print(f"An error occurred while fetching the page: {e}")
+        logger.error(f"An error occurred while fetching the page: {e}")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        logger.error(f"An unexpected error occurred: {e}")
     return []
 
 TITLE, SELECTION, SEASON, EPISODE = range(4)
@@ -126,35 +130,46 @@ async def cancel(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text("Operation cancelled.")
     return ConversationHandler.END
 
-def main() -> None:
-    # Replace 'YOUR_TOKEN' with your actual bot token
-    application = Application.builder().token("7104591151:AAGKQMJhSD9C20mNTkpU1rK1UYgdvbhu0lg").build()
-
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_title)],
-            SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_selection)],
-            SEASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_season)],
-            EPISODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_episode)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)])
-
-    application.add_handler(conv_handler)
-
-    # Start the bot polling in a separate thread
-    threading.Thread(target=application.run_polling, daemon=True).start()
-
-    # Set up Flask app
+def run_flask():
     app = Flask(__name__)
 
     @app.route('/')
     def home():
         return "Bot is running!"
 
-    # Start the Flask web server
     port = int(os.environ.get('PORT', 5000))
+    logger.info(f"Starting Flask server on port {port}")
     app.run(host='0.0.0.0', port=port)
 
+def main() -> None:
+    logger.info("Starting bot...")
+    try:
+        # Replace 'YOUR_TOKEN' with your actual bot token
+        application = Application.builder().token("7104591151:AAGKQMJhSD9C20mNTkpU1rK1UYgdvbhu0lg").build()
+
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', start)],
+            states={
+                TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_title)],
+                SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_selection)],
+                SEASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_season)],
+                EPISODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_episode)],
+            },
+            fallbacks=[CommandHandler('cancel', cancel)])
+
+        application.add_handler(conv_handler)
+
+        logger.info("Starting bot polling...")
+        # Start the bot polling
+        application.run_polling()
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+
 if __name__ == "__main__":
+    # Start Flask in a separate thread
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # Run the main bot function
     main()
